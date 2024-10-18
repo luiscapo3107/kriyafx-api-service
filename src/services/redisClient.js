@@ -8,7 +8,7 @@ async function initializeRedisClient() {
   if (!redisClient || !redisClient.isOpen) {
     try {
       redisClient = Redis.createClient({
-        // Add any necessary options here, e.g., url: process.env.REDIS_URL
+        url: process.env.REDIS_URL || 'redis://localhost:6379'
       });
 
       redisClient.on('error', (err) => console.error('Redis Client Error', err));
@@ -42,4 +42,8 @@ async function closeRedisClient() {
   }
 }
 
-module.exports = { getRedisClient, closeRedisClient };
+function createSubscriber() {
+  return redisClient.duplicate();
+}
+
+module.exports = { getRedisClient, closeRedisClient, createSubscriber };

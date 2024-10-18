@@ -5,7 +5,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const connectDB = require('./services/db');
 const config = require('./config/config');
-const { getRedisClient, closeRedisClient } = require('./services/redisClient');
+const { getRedisClient, closeRedisClient, createSubscriber } = require('./services/redisClient');
 const authRoutes = require('./routes/authRoutes');
 const dataRoutes = require('./routes/dataRoutes');
 const http = require('http');
@@ -22,16 +22,6 @@ app.use(bodyParser.json());
 // Middleware to attach Redis client to request object
 app.use(async (req, res, next) => {
     req.redisClient = await getRedisClient();
-    next();
-  });
-  
-  // Middleware to close Redis connection after response is sent
-  app.use(async (req, res, next) => {
-    res.on('finish', async () => {
-      if (req.redisClient) {
-        await closeRedisClient();
-      }
-    });
     next();
   });
 
@@ -55,7 +45,8 @@ initSharedRedisClient();
 wss.on('connection', async (ws) => {
   console.log('New WebSocket connection');
   
-  const subscriber = sharedRedisClient.duplicate();
+  const client = await getRedisClient();
+  const subscriber = createSubscriber();
   
   // Function to send the latest data to the client
   async function sendLatestData(ws) {
@@ -119,3 +110,10 @@ app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
     res.status(500).json({ message: 'Internal server error' });
   });
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Shutting down gracefully');
+  await closeRedisClient();
+  process.exit(0);
+});
