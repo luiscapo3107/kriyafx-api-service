@@ -44,26 +44,32 @@ app.get('/', (req, res) => {
   res.send('Express server running...');
 });
 
+// Initialize the shared Redis client
+async function initSharedRedisClient() {
+  sharedRedisClient = await getRedisClient();
+}
+
+initSharedRedisClient();
+
 // WebSocket connection handler
 wss.on('connection', async (ws) => {
   console.log('New WebSocket connection');
   
-  const redisClient = await getRedisClient();
-  const subscriber = redisClient.duplicate();
+  const subscriber = sharedRedisClient.duplicate();
   
   // Function to send the latest data to the client
-  const sendLatestData = async () => {
+  async function sendLatestData(ws) {
     try {
-      const latestData = await redisClient.zRange('options_chain_data_zset', -1, -1);
+      const latestData = await sharedRedisClient.zRange('options_chain_data_zset', -1, -1);
       if (latestData.length > 0) {
         const parsedData = JSON.parse(latestData[0]);
         ws.send(JSON.stringify({ type: 'update', data: parsedData }));
-        console.log('Sent latest data to client');
+        console.log(`Data sent to client at ${new Date().toLocaleString("en-US", {timeZone: "CET"})}`);
       } else {
-        console.log('No data available in the sorted set');
+        console.log(`No new data available to send to client`);
       }
     } catch (error) {
-      console.error('Error fetching latest data:', error);
+      console.error("Error fetching latest data:", error);
     }
   };
 
@@ -79,11 +85,11 @@ wss.on('connection', async (ws) => {
     // Subscribe to keyspace notifications for the sorted set
     await subscriber.subscribe('options_chain_update', async (message) => {
       console.log('Received update notification');
-      await sendLatestData();
+      await sendLatestData(ws);
     });
 
     // Send initial data when client connects
-    await sendLatestData();
+    await sendLatestData(ws);
 
     ws.on('close', async () => {
       console.log('WebSocket connection closed');
